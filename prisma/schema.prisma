@@ -1,0 +1,225 @@
+// Linkeo - SaaS Link in Bio - Prisma Schema
+// PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum PlanSlug {
+  FREE
+  EMPRENDEDOR
+  NEGOCIO
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+  UNPAID
+}
+
+enum LinkType {
+  LINK
+  WHATSAPP
+  PAYMENT
+  SOCIAL
+}
+
+// ============ USUARIOS ============
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  name          String?
+  avatarUrl     String?  @map("avatar_url")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  subscription Subscription?
+  pages        Page[]
+  stripeCustomerId String? @unique @map("stripe_customer_id")
+
+  @@map("users")
+}
+
+// ============ PLANES ============
+// Free, Emprendedor ($4), Negocio ($9), Pro ($19)
+
+model Plan {
+  id            String   @id @default(cuid())
+  slug          PlanSlug @unique
+  name          String
+  description   String?
+  priceMonthly  Decimal  @map("price_monthly") @db.Decimal(10, 2) // 0, 4, 9, 19
+  priceYearly   Decimal? @map("price_yearly") @db.Decimal(10, 2)  // null, 36, 99, 199
+  stripePriceIdMonthly String? @map("stripe_price_id_monthly")
+  stripePriceIdYearly  String? @map("stripe_price_id_yearly")
+
+  // Límites del plan (JSON para flexibilidad)
+  maxPages      Int      @default(1) @map("max_pages")
+  maxLinks      Int      @default(5) @map("max_links")
+  maxThemes     Int      @default(3) @map("max_themes")
+
+  // Features como flags
+  customDomain   Boolean @default(false) @map("custom_domain")
+  removeBranding Boolean @default(false) @map("remove_branding")
+  qrCode         Boolean @default(true) @map("qr_code")
+  basicStats     Boolean @default(true) @map("basic_stats")
+  fullStats      Boolean @default(false) @map("full_stats")
+  advancedAnalytics Boolean @default(false) @map("advanced_analytics")
+  whatsappButton Boolean @default(false) @map("whatsapp_button")
+  paymentButton  Boolean @default(false) @map("payment_button")
+  scheduledLinks Boolean @default(false) @map("scheduled_links")
+  leadCapture    Boolean @default(false) @map("lead_capture")
+  socialIntegrations Boolean @default(false) @map("social_integrations")
+  pixelFacebook  Boolean @default(false) @map("pixel_facebook")
+  pixelGoogle    Boolean @default(false) @map("pixel_google")
+  multipleAdmins Boolean @default(false) @map("multiple_admins")
+  dataExport     Boolean @default(false) @map("data_export")
+  abTesting      Boolean @default(false) @map("ab_testing")
+  clientManagement Boolean @default(false) @map("client_management")
+  prioritySupport Boolean @default(false) @map("priority_support")
+  premiumTemplates Boolean @default(false) @map("premium_templates")
+
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+// ============ SUSCRIPCIONES (Stripe) ============
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique @map("user_id")
+  planId               String             @map("plan_id")
+  status               SubscriptionStatus @default(ACTIVE)
+
+  stripeSubscriptionId String?  @unique @map("stripe_subscription_id")
+  stripeCustomerId     String?  @map("stripe_customer_id")
+  currentPeriodStart   DateTime? @map("current_period_start")
+  currentPeriodEnd     DateTime? @map("current_period_end")
+  cancelAtPeriodEnd    Boolean  @default(false) @map("cancel_at_period_end")
+  isYearly             Boolean  @default(false) @map("is_yearly")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan  @relation(fields: [planId], references: [id])
+
+  @@map("subscriptions")
+}
+
+// ============ PÁGINA DE LINKS (Link in Bio) ============
+
+model Page {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  name        String   // ej: "Mi perfil"
+  slug        String   @unique // URL pública: /p/slug (único en la plataforma)
+  customDomain String? @map("custom_domain") // solo planes Negocio+
+  themeId     String?  @map("theme_id")
+  // Configuración visual (JSON o campos)
+  backgroundColor String? @map("background_color") @default("#ffffff")
+  textColor       String? @map("text_color") @default("#000000")
+  fontFamily      String? @map("font_family")
+  buttonStyle     String? @map("button_style") // rounded, square, etc.
+  showBranding    Boolean @default(true) @map("show_branding")
+  seoTitle        String? @map("seo_title")
+  seoDescription  String? @map("seo_description")
+  profileImageUrl String? @map("profile_image_url")
+  headline        String?
+  // Integraciones
+  whatsappNumber  String? @map("whatsapp_number")
+  pixelFacebookId String? @map("pixel_facebook_id")
+  pixelGoogleId  String? @map("pixel_google_id")
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme Theme? @relation(fields: [themeId], references: [id])
+  links Link[]
+
+  @@map("pages")
+}
+
+// ============ ENLACES ============
+
+model Link {
+  id          String   @id @default(cuid())
+  pageId      String   @map("page_id")
+  title       String
+  url         String
+  type        LinkType @default(LINK)
+  iconUrl     String?  @map("icon_url")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  // Programación (plan Emprendedor+)
+  scheduledStart DateTime? @map("scheduled_start")
+  scheduledEnd   DateTime? @map("scheduled_end")
+  // WhatsApp (número o link)
+  whatsappPayload String? @map("whatsapp_payload")
+  // Pago (Stripe link, etc.)
+  paymentConfig  String? @map("payment_config") @db.Text // JSON
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  page   Page         @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  clicks LinkClick[]
+
+  @@map("links")
+}
+
+// ============ TEMAS ============
+
+model Theme {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  previewUrl  String?  @map("preview_url")
+  isPremium   Boolean  @default(false) @map("is_premium")
+  config      String?  @db.Text // JSON con colores, fuentes por defecto
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  pages Page[]
+
+  @@map("themes")
+}
+
+// ============ ANALÍTICA (clics) ============
+
+model LinkClick {
+  id        String   @id @default(cuid())
+  linkId    String   @map("link_id")
+  clickedAt DateTime @default(now()) @map("clicked_at")
+  ip        String?
+  userAgent String?  @map("user_agent") @db.Text
+  country   String?
+  referrer  String?  @db.Text
+
+  link Link @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, clickedAt])
+  @@map("link_clicks")
+}

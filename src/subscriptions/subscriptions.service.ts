@@ -1,95 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { StripeService } from '../stripe/stripe.service';
-import { SubscriptionStatus } from '@prisma/client';
 
 @Injectable()
 export class SubscriptionsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly stripeService: StripeService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getCurrentSubscription(userId: string) {
     return this.prisma.subscription.findUnique({
       where: { userId },
       include: { plan: true },
-    });
-  }
-
-  async syncFromStripeSubscription(userId: string, stripeSubscriptionId: string) {
-    const stripe = this.stripeService.getClient();
-    const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId, { expand: ['plan.product'] });
-    const priceId = sub.items.data[0]?.price.id;
-    let plan = sub.metadata?.planId
-      ? await this.prisma.plan.findUnique({ where: { id: sub.metadata.planId as string } })
-      : null;
-    if (!plan && priceId) {
-      const planByPrice = await this.prisma.plan.findFirst({
-        where: {
-          OR: [{ stripePriceIdMonthly: priceId }, { stripePriceIdYearly: priceId }],
-        },
-      });
-      plan = planByPrice ?? null;
-    }
-    if (!plan) return;
-
-    const status = this.mapStripeStatus(sub.status);
-    const isYearly = sub.items.data[0]?.price.recurring?.interval === 'year';
-
-    await this.prisma.subscription.upsert({
-      where: { userId },
-      create: {
-        userId,
-        planId: plan.id,
-        status,
-        stripeSubscriptionId: sub.id,
-        stripeCustomerId: sub.customer as string,
-        currentPeriodStart: new Date(sub.current_period_start * 1000),
-        currentPeriodEnd: new Date(sub.current_period_end * 1000),
-        cancelAtPeriodEnd: sub.cancel_at_period_end,
-        isYearly,
-      },
-      update: {
-        planId: plan.id,
-        status,
-        stripeSubscriptionId: sub.id,
-        stripeCustomerId: sub.customer as string,
-        currentPeriodStart: new Date(sub.current_period_start * 1000),
-        currentPeriodEnd: new Date(sub.current_period_end * 1000),
-        cancelAtPeriodEnd: sub.cancel_at_period_end,
-        isYearly,
-      },
-    });
-  }
-
-  private async getPlanSlugByStripePriceId(priceId: string): Promise<string | null> {
-    const plan = await this.prisma.plan.findFirst({
-      where: {
-        OR: [
-          { stripePriceIdMonthly: priceId },
-          { stripePriceIdYearly: priceId },
-        ],
-      },
-    });
-    return plan?.slug ?? null;
-  }
-
-  private mapStripeStatus(status: string): SubscriptionStatus {
-    const map: Record<string, SubscriptionStatus> = {
-      active: 'ACTIVE',
-      canceled: 'CANCELED',
-      past_due: 'PAST_DUE',
-      trialing: 'TRIALING',
-      unpaid: 'UNPAID',
-    };
-    return map[status] || 'ACTIVE';
-  }
-
-  async markPastDue(stripeSubscriptionId: string) {
-    await this.prisma.subscription.updateMany({
-      where: { stripeSubscriptionId },
-      data: { status: 'PAST_DUE' },
     });
   }
 
@@ -102,6 +21,38 @@ export class SubscriptionsService {
     if (!freePlan) return null;
     return this.prisma.subscription.create({
       data: { userId, planId: freePlan.id, status: 'ACTIVE' },
+      include: { plan: true },
+    });
+  }
+
+  /** Activar plan de pago tras confirmar pago con Paymentez/Nuvei */
+  async activatePaidPlan(userId: string, planId: string, isYearly: boolean) {
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan) return null;
+    const now = new Date();
+    const periodEnd = new Date(now);
+    if (isYearly) {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+    return this.prisma.subscription.upsert({
+      where: { userId },
+      create: {
+        userId,
+        planId: plan.id,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        isYearly,
+      },
+      update: {
+        planId: plan.id,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        isYearly,
+      },
       include: { plan: true },
     });
   }

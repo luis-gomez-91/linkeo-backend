@@ -38,8 +38,9 @@ enum LinkType {
 
 model User {
   id            String   @id @default(cuid())
-  email         String   @unique
-  passwordHash  String   @map("password_hash")
+  supabaseUid   String?  @unique @map("supabase_uid") // ID externo (Auth.js sub, etc.)
+  email         String?  @unique
+  passwordHash  String?  @map("password_hash") // opcional: solo si usas login con contraseña propio
   name          String?
   avatarUrl     String?  @map("avatar_url")
   emailVerified Boolean  @default(false) @map("email_verified")
@@ -124,6 +125,23 @@ model Subscription {
   plan Plan  @relation(fields: [planId], references: [id])
 
   @@map("subscriptions")
+}
+
+// ============ PAGOS PENDIENTES (Paymentez) ============
+
+model PendingPayment {
+  id              String   @id @default(cuid())
+  devReference    String   @unique @map("dev_reference")
+  userId          String   @map("user_id")
+  planId          String   @map("plan_id")
+  yearly          Boolean  @default(false)
+  status          String   @default("PENDING") // PENDING | COMPLETED | FAILED
+  paymentezRef     String?  @map("paymentez_ref")
+  transactionId   String?  @map("transaction_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("pending_payments")
 }
 
 // ============ PÁGINA DE LINKS (Link in Bio) ============

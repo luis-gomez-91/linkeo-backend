@@ -1,20 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import * as express from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
-  const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.use(
-    express.json({
-      verify: (req: express.Request & { rawBody?: Buffer }, _res, buf) => {
-        req.rawBody = buf;
-      },
-    }),
-  );
-  expressApp.use(express.urlencoded({ extended: true }));
+  const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -27,7 +17,7 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('Linkeo API')
-    .setDescription('API del SaaS Link in Bio - planes, usuarios, páginas, enlaces y pagos con Stripe')
+    .setDescription('API del SaaS Link in Bio - planes, usuarios, páginas, enlaces y pagos con Nuvei/Paymentez')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

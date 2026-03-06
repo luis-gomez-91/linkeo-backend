@@ -13,6 +13,12 @@ export class PlansService {
     });
   }
 
+  async findById(id: string) {
+    return this.prisma.plan.findUnique({
+      where: { id, isActive: true },
+    });
+  }
+
   async findBySlug(slug: string) {
     const plan = await this.prisma.plan.findFirst({
       where: { slug: slug.toUpperCase() as PlanSlug, isActive: true },
